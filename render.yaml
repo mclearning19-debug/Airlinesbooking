@@ -1,0 +1,21 @@
+# Render Blueprint: Dashboard -> New -> Blueprint -> pick this repo. One web service, no separate database
+# (the database is Neon). Secrets marked sync: false are asked for once during Blueprint creation and are
+# never stored in this file.
+services:
+  - type: web
+    name: airline-booking
+    runtime: node
+    plan: free # free instances sleep after 15 min idle; the first request then takes ~1 min. Use "starter" for always-on.
+    buildCommand: npm ci && npm run build # NODE_ENV=production is runtime-only on Render, so devDependencies (Vite) install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL # Neon pooled connection string (host contains "-pooler")
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      # BETTER_AUTH_URL is optional: server/auth.js falls back to RENDER_EXTERNAL_URL (the onrender.com URL).
+      # Set it explicitly only when serving from a custom domain.
