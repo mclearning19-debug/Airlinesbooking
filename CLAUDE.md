@@ -46,3 +46,12 @@ Single deployable: one Express process (`server/index.js`) serves the REST API u
 - Cached client snapshots can go stale; the server's checks are what count.
 - Search criteria (`from`, `to`, `date`, `passengers`) live in the URL search params.
 - Browsing (Home, Flights, seat maps) is public; Book, MyBookings and BookingDetail are behind `<RequireAuth>`. Flow: Home (search) -> Flights (results) -> Book (seat map + passengers + contact) -> BookingDetail; MyBookings lists and cancels. There are no image assets.
+
+## Deployment
+
+Live on Render (free web service `airline-booking`, Ohio): https://airline-booking-to3e.onrender.com. Source is the public GitHub repo `mclearning19-debug/Airlinesbooking` (`origin`, branch `main`). The service has auto-deploy on, so **every push to `main` redeploys production**; verify locally first.
+- The service was created through the Render API, not from `render.yaml`, so changing `render.yaml` does not change the running service. Change build/start commands and env vars in the Render Dashboard (or API). `render.yaml` is only for creating a new service from a Blueprint.
+- Production env vars live only in Render: `DATABASE_URL`, `BETTER_AUTH_SECRET` (different from dev), `NODE_VERSION=22`. `BETTER_AUTH_URL` is intentionally unset: `server/auth.js` falls back to Render's `RENDER_EXTERNAL_URL`. Set it only for a custom domain, otherwise sign-in fails with `INVALID_ORIGIN`.
+- Production currently shares the same Neon database as local dev, so test users and bookings made locally are visible in production (and vice versa). Delete test data in both places.
+- Free plan sleeps after 15 minutes idle; the first request takes about a minute. The migration re-runs on each start (idempotent).
+- After a deploy, check `/api/health`, a SPA deep link such as `/bookings`, and a sign-up/booking round trip on the live URL.
