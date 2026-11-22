@@ -49,9 +49,23 @@ Single deployable: one Express process (`server/index.js`) serves the REST API u
 
 ## Deployment
 
+A multi-stage `Dockerfile` (node:22-alpine, runs `node server/index.js --prod`, port 3000) is included as an alternative to Render's native Node build; Render does not use it, but the Azure deployment below does. Production mode is `NODE_ENV=production` or the `--prod` flag (`server/env.js`).
+
 Live on Render (free web service `airline-booking`, Ohio): https://airline-booking-to3e.onrender.com. Source is the public GitHub repo `mclearning19-debug/Airlinesbooking` (`origin`, branch `main`). The service has auto-deploy on, so **every push to `main` redeploys production**; verify locally first.
 - The service was created through the Render API, not from `render.yaml`, so changing `render.yaml` does not change the running service. Change build/start commands and env vars in the Render Dashboard (or API). `render.yaml` is only for creating a new service from a Blueprint.
 - Production env vars live only in Render: `DATABASE_URL`, `BETTER_AUTH_SECRET` (different from dev), `NODE_VERSION=22`. `BETTER_AUTH_URL` is intentionally unset: `server/auth.js` falls back to Render's `RENDER_EXTERNAL_URL`. Set it only for a custom domain, otherwise sign-in fails with `INVALID_ORIGIN`.
-- Production currently shares the same Neon database as local dev, so test users and bookings made locally are visible in production (and vice versa). Delete test data in both places.
+- Production (Render and Azure) currently shares the same Neon database as local dev, so test users and bookings made locally are visible in production (and vice versa). Delete test data everywhere.
 - Free plan sleeps after 15 minutes idle; the first request takes about a minute. The migration re-runs on each start (idempotent).
 - After a deploy, check `/api/health`, a SPA deep link such as `/bookings`, and a sign-up/booking round trip on the live URL.
+
+### Azure (second deployment, Azure Container Apps)
+
+Live at https://airline-booking.orangestone-ac8d8541.eastus.azurecontainerapps.io. It runs the repo `Dockerfile`, deployed manually with the Azure CLI: **pushing to `main` does not redeploy Azure** (there is no CI for it).
+- Subscription "Azure subscription 1", tenant `886da1f3-d5b5-4f86-b244-e6314d24b6a5`, resource group `airline-rg` (eastus). Resources: Container App `airline-booking`, environment `airline-env`, Basic container registry `cad1efcdf2cdacr`, and a Log Analytics workspace. `az group delete -n airline-rg` removes everything. The subscription allows only one Container Apps environment per region.
+- Scale 0-1 replicas, so the first request after idle is a cold start.
+- Env vars on the app: `NODE_ENV=production`, `DATABASE_URL` and `BETTER_AUTH_SECRET` (both `secretref:` to Container App secrets `dburl` and `authsecret`; the auth secret is separate from dev and Render), and `BETTER_AUTH_URL=https://<app fqdn>`. `BETTER_AUTH_URL` is required here: there is no `RENDER_EXTERNAL_URL` fallback, so without it the server exits. Update it if the FQDN or domain changes, otherwise sign-in fails with `INVALID_ORIGIN`.
+- Redeploy after code changes (run from the repo root, PowerShell, `az` signed in via `az login --use-device-code`):
+  1. `az acr build -r cad1efcdf2cdacr -t airline-booking:<new-tag> --no-logs .`
+  2. `az containerapp update -n airline-booking -g airline-rg --image cad1efcdf2cdacr.azurecr.io/airline-booking:<new-tag>`
+- Windows CLI gotchas: `az containerapp up --source .` crashes with `UnicodeEncodeError` (cp1252 vs the build log's checkmark) while streaming the build, so use `--no-logs` as above. `az` runs through `cmd`, so a value containing `&` (the Neon `DATABASE_URL` has `channel_binding=...&...`) truncates the command and drops every later argument; wrap such values in embedded quotes (`"`"dburl=$db`""` in PowerShell) and check the result with `az containerapp show ... --query "properties.template.containers[0].env"`. Use `--no-wait` and poll for `az containerapp env create`, since an interrupted create leaves the environment stuck in `Waiting`.
+- Check logs with `az containerapp logs show -n airline-booking -g airline-rg --type console --tail 40`.
